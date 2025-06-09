@@ -1,7 +1,7 @@
 # run.ps1
 
 # Define paths
-$SRC_DIR="src/StableMulticast"
+$SRC_DIR="src"
 $BIN_DIR="bin"
 $STABLE_MULTICAST_PACKAGE="StableMulticast"
 $MAIN_APP="MyApplication"
