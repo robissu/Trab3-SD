@@ -12,12 +12,25 @@ New-Item -ItemType Directory -Path "$BIN_DIR" -Force
 
 Write-Host "Compiling StableMulticast package..."
 
-# Encontra todos os arquivos .java no diretório do pacote e os formata como uma string separada por espaço
-$StableMulticastSourceFiles = Get-ChildItem -Path "$SRC_DIR\$STABLE_MULTICAST_PACKAGE" -Filter "*.java" | ForEach-Object { $_.FullName } | Sort-Object | Out-String -Stream | ForEach-Object { $_.Trim() } | Where-Object { $_ } # Limpa e garante que seja uma única string para javac
-$StableMulticastSourceFiles = $StableMulticastSourceFiles -join " " # Garante que os caminhos sejam separados por espaço
+# --- INÍCIO DA SOLUÇÃO COM SPLATTING ---
 
-# Agora passe a string dos arquivos para javac
-javac -d "$BIN_DIR" $StableMulticastSourceFiles
+# Pega os caminhos completos dos arquivos .java como um array de strings
+$StableMulticastSourceFilesArray = Get-ChildItem -Path "$SRC_DIR\$STABLE_MULTICAST_PACKAGE" -Filter "*.java" | Select-Object -ExpandProperty FullName
+
+# **ADICIONAL: Verificação de arquivos encontrados** (boa prática para depuração)
+if (-not $StableMulticastSourceFilesArray) {
+    Write-Host "Error: No .java source files found in $SRC_DIR\$STABLE_MULTICAST_PACKAGE. Check your path and file existence." -ForegroundColor Red
+    exit 1
+}
+
+# Cria um array para os argumentos de javac, incluindo -d e o diretório de saída
+$javacArgs = @("-d", "$BIN_DIR") + $StableMulticastSourceFilesArray
+
+# Usa o operador de splatting '@' para passar os argumentos para javac
+javac @javacArgs
+
+# --- FIM DA SOLUÇÃO COM SPLATTING ---
+
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Compilation of StableMulticast failed." -ForegroundColor Red
