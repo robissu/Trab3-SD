@@ -59,6 +59,10 @@ public class StableMulticast {
         System.out.println("StableMulticast initialized. My IP: " + myIp + ", Port: " + myPort);
     }
 
+    public int getId() {
+        return myId;
+    }
+
     private void startDiscoveryService() {
         scheduledThreadPool.scheduleAtFixedRate(() -> {
             try {
@@ -125,7 +129,8 @@ public class StableMulticast {
                         // Resize and initialize MC if necessary
                         synchronized (clockLock) {
                             if (mc.getMc().length != groupMembers.size()) {
-                                System.out.println("Resizing MulticastClock from " + mc.getMc().length + " to " + groupMembers.size());
+                                System.out.println("Resizing MulticastClock from " + mc.getMc().length + " to "
+                                        + groupMembers.size());
                                 MulticastClock newMc = new MulticastClock(groupMembers.size());
                                 // Copy existing clock values to new MC if possible
                                 for (int i = 0; i < Math.min(mc.getMc().length, newMc.getMc().length); i++) {
@@ -136,7 +141,8 @@ public class StableMulticast {
                                 mc = newMc;
                             }
                         }
-                        System.out.println("Group members updated. My ID: " + myId + ", Members: " + groupMembers.stream().map(Object::toString).collect(Collectors.joining(", ")));
+                        System.out.println("Group members updated. My ID: " + myId + ", Members: "
+                                + groupMembers.stream().map(Object::toString).collect(Collectors.joining(", ")));
                         displayClockAndBuffer(); // Re-display on change
                     }
                 }
@@ -189,7 +195,8 @@ public class StableMulticast {
                     mc.increment(myId, msg.getSenderId());
                 }
             } else {
-                System.err.println("Warning: Received message from unknown sender ID (" + msg.getSenderId() + "). Discarding clock update.");
+                System.err.println("Warning: Received message from unknown sender ID (" + msg.getSenderId()
+                        + "). Discarding clock update.");
             }
         }
 
@@ -212,7 +219,8 @@ public class StableMulticast {
 
                     int sender = msg.getSenderId();
                     if (sender < 0 || sender >= mc.getMc().length) {
-                        System.err.println("Warning: Message in buffer has invalid sender ID (" + sender + "). Skipping stabilization check.");
+                        System.err.println("Warning: Message in buffer has invalid sender ID (" + sender
+                                + "). Skipping stabilization check.");
                         continue;
                     }
 
@@ -245,7 +253,6 @@ public class StableMulticast {
             }
         }
     }
-
 
     public void msend(String msgContent, IStableMulticast client) {
         if (myId == -1) {
@@ -283,7 +290,8 @@ public class StableMulticast {
                         .filter(m -> !m.equals(new InetSocketAddress(myIp, myPort)))
                         .collect(Collectors.toList());
 
-                System.out.println("Choose recipients (enter numbers separated by space, or 'all' for all, 'none' to skip sending):");
+                System.out.println(
+                        "Choose recipients (enter numbers separated by space, or 'all' for all, 'none' to skip sending):");
                 for (int i = 0; i < otherMembers.size(); i++) {
                     System.out.println((i + 1) + ". " + otherMembers.get(i));
                 }
@@ -318,7 +326,8 @@ public class StableMulticast {
                 oos.writeObject(msg);
                 byte[] data = bos.toByteArray();
 
-                DatagramPacket packet = new DatagramPacket(data, data.length, destination.getAddress(), destination.getPort());
+                DatagramPacket packet = new DatagramPacket(data, data.length, destination.getAddress(),
+                        destination.getPort());
                 unicastSocket.send(packet);
                 System.out.println("Sent unicast message to " + destination + ": " + msg.getContent());
             } catch (IOException e) {
