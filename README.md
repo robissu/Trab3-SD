@@ -16,24 +16,6 @@ Markdown
 
 Este projeto implementa um middleware de comunicação multicast estável, utilizando relógios vetoriais de vetores (vector clock of vector clocks) para garantir a estabilidade das mensagens em um ambiente distribuído. Ele simula um ambiente de sistema distribuído onde múltiplas instâncias da aplicação podem se comunicar, mantendo a consistência de mensagens através de um algoritmo de estabilização.
 
-## Estrutura do Projeto
-
-A estrutura do projeto é organizada da seguinte forma:
-
-trab sd3/
-├── StableMulticast/
-│   ├── bin/                    # Arquivos .class compilados (saída do compilador Java)
-│   └── src/                    # Código fonte Java
-│       ├── StableMulticast/    # Pacote Java do middleware StableMulticast
-│       │   ├── IStableMulticast.java
-│       │   ├── MulticastClock.java
-│       │   ├── StableMulticast.java
-│       │   └── StableMulticastMessage.java
-│       └── MyApplication.java  # Exemplo de aplicação que utiliza o middleware
-├── Readme.md                   # Este arquivo
-└── run.ps1                     # Script PowerShell para compilação e execução
-
-
 ## Requisitos
 
 Para compilar e executar este projeto, você precisará ter o seguinte instalado:
