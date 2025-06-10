@@ -46,6 +46,6 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Compilation successful. Now you can run instances:" -ForegroundColor Green
-Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P1 127.0.0.1 5000"
-Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P2 127.0.0.1 5001"
-Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P3 127.0.0.1 5002"
+Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P 127.0.0.1 5000"
+Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P 127.0.0.1 5001"
+Write-Host "Example: java -cp $BIN_DIR $MAIN_APP P 127.0.0.1 5002"
