@@ -8,47 +8,66 @@ import java.util.stream.Collectors;
 
 public class StableMulticast {
 
-    private static final String MULTICAST_ADDRESS = "230.0.0.1";
+    private static final String MULTICAST_ADDRESS_STR = "230.0.0.1";
     private static final int MULTICAST_PORT = 4446;
-    private static final int DISCOVERY_INTERVAL_MS = 2000; // Discover members every 2 seconds
+    private static final int DISCOVERY_INTERVAL_MS = 2000;
 
-    private int myId; // Unique ID for this instance (assigned based on discovery order)
+    private int myId;
     private String myIp;
     private Integer myPort;
     private IStableMulticast clientCallback;
 
-    private volatile MulticastClock mc; // The vector of vector clocks
-    private volatile List<StableMulticastMessage> messageBuffer; // Buffer for received messages
-    private final List<InetSocketAddress> groupMembers; // IP and port of other StableMulticast instances
+    private volatile MulticastClock mc;
+    private volatile List<StableMulticastMessage> messageBuffer;
+    private final List<InetSocketAddress> groupMembers;
 
     private DatagramSocket unicastSocket;
     private MulticastSocket multicastSocket;
+    private InetAddress MULTICAST_ADDRESS;
 
     private ExecutorService threadPool;
     private ScheduledExecutorService scheduledThreadPool;
 
     private volatile boolean running;
-    private final Object clockLock = new Object(); // Lock for MC updates
-    private final Object bufferLock = new Object(); // Lock for buffer updates
+    private final Object clockLock = new Object();
+    private final Object bufferLock = new Object();
 
-    private Scanner scanner; // For user input control
+    private Scanner scanner;
 
     public StableMulticast(String ip, Integer port, IStableMulticast client) throws IOException {
         this.myIp = ip;
         this.myPort = port;
         this.clientCallback = client;
-        this.myId = -1; // Will be assigned during discovery
+        this.myId = -1;
 
         this.messageBuffer = new LinkedList<>();
         this.groupMembers = Collections.synchronizedList(new ArrayList<>());
-        this.mc = new MulticastClock(1); // Initialize with 1, will resize on discovery
+        this.mc = new MulticastClock(1);
+        this.MULTICAST_ADDRESS = InetAddress.getByName(MULTICAST_ADDRESS_STR);
 
-        this.unicastSocket = new DatagramSocket(myPort, InetAddress.getByName(myIp));
-        this.multicastSocket = new MulticastSocket(MULTICAST_PORT);
-        this.multicastSocket.joinGroup(InetAddress.getByName(MULTICAST_ADDRESS));
+        try {
+            this.unicastSocket = new DatagramSocket(myPort, InetAddress.getByName(myIp));
+            // System.out.println("StableMulticast: Socket unicast ligado a " + myIp + ":" + myPort); // Removido log de inicialização de socket unicast
+
+            this.multicastSocket = new MulticastSocket(MULTICAST_PORT);
+            // System.out.println("StableMulticast: Socket multicast criado na porta " + MULTICAST_PORT); // Removido log de inicialização de socket multicast
+
+            InetAddress localInterface = InetAddress.getByName(myIp);
+            this.multicastSocket.setInterface(localInterface);
+            // System.out.println("StableMulticast: Interface do socket multicast definida para " + localInterface.getHostAddress()); // Removido log de interface definida
+
+            this.multicastSocket.joinGroup(MULTICAST_ADDRESS);
+            this.multicastSocket.setTimeToLive(1);
+            System.out.println("StableMulticast: Entrou no grupo multicast " + MULTICAST_ADDRESS.getHostAddress() + " com TTL=1."); // Mantido, é um log importante de configuração
+
+        } catch (IOException e) {
+            System.err.println("StableMulticast: ERRO FATAL durante a inicialização do socket: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
+        }
 
         this.threadPool = Executors.newCachedThreadPool();
-        this.scheduledThreadPool = Executors.newScheduledThreadPool(2); // For discovery and stabilization check
+        this.scheduledThreadPool = Executors.newScheduledThreadPool(2);
         this.running = true;
         this.scanner = new Scanner(System.in);
 
@@ -56,7 +75,7 @@ public class StableMulticast {
         startUnicastReceiver();
         startStabilizationChecker();
 
-        System.out.println("StableMulticast initialized. My IP: " + myIp + ", Port: " + myPort);
+        System.out.println("StableMulticast inicializado. Meu IP: " + myIp + ", Porta: " + myPort);
     }
 
     public int getId() {
@@ -70,35 +89,41 @@ public class StableMulticast {
                 String presenceMsg = myIp + ":" + myPort;
                 byte[] buffer = presenceMsg.getBytes();
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length,
-                        InetAddress.getByName(MULTICAST_ADDRESS), MULTICAST_PORT);
+                        MULTICAST_ADDRESS, MULTICAST_PORT);
                 multicastSocket.send(packet);
+                // System.out.println("DiscoveryService: ENVIANDO mensagem de presença de: " + myIp + ":" + myPort + " para o grupo multicast " + MULTICAST_ADDRESS.getHostAddress() + ":" + MULTICAST_PORT); // Removido log de envio constante
 
                 // Listen for presence messages
                 byte[] receiveBuf = new byte[256];
                 DatagramPacket receivePacket = new DatagramPacket(receiveBuf, receiveBuf.length);
-                multicastSocket.setSoTimeout(DISCOVERY_INTERVAL_MS / 2); // Shorter timeout for listening
+                multicastSocket.setSoTimeout(DISCOVERY_INTERVAL_MS / 2);
 
                 Set<InetSocketAddress> currentMembers = new HashSet<>();
-                currentMembers.add(new InetSocketAddress(myIp, myPort)); // Add self first
+                currentMembers.add(new InetSocketAddress(myIp, myPort));
 
                 while (true) {
                     try {
                         multicastSocket.receive(receivePacket);
                         String received = new String(receivePacket.getData(), 0, receivePacket.getLength());
+                        // String senderIp = receivePacket.getAddress().getHostAddress(); // Removido para simplificar log abaixo
+                        // int senderPort = receivePacket.getPort(); // Removido para simplificar log abaixo
+                        // System.out.println("DiscoveryService: RECEBIDO mensagem de presença de: " + senderIp + ":" + senderPort + " -> Dados: " + received); // Removido log de recebimento constante
+
+
                         String[] parts = received.split(":");
                         if (parts.length == 2) {
                             String memberIp = parts[0];
                             int memberPort = Integer.parseInt(parts[1]);
                             InetSocketAddress memberAddress = new InetSocketAddress(memberIp, memberPort);
 
-                            if (!memberAddress.equals(new InetSocketAddress(myIp, myPort))) { // Don't add self again
+                            if (!memberAddress.equals(new InetSocketAddress(myIp, myPort))) {
                                 currentMembers.add(memberAddress);
                             }
                         }
                     } catch (SocketTimeoutException ste) {
-                        break; // No more discovery messages for this interval
+                        break;
                     } catch (IOException e) {
-                        System.err.println("Discovery error: " + e.getMessage());
+                        System.err.println("DiscoveryService: ERRO durante a recepção/processamento multicast: " + e.getMessage());
                         break;
                     }
                 }
@@ -119,20 +144,17 @@ public class StableMulticast {
                         groupMembers.clear();
                         groupMembers.addAll(sortedMembers);
 
-                        // Assign new ID to myself based on sorted list
                         this.myId = groupMembers.indexOf(new InetSocketAddress(myIp, myPort));
                         if (this.myId == -1) {
-                            System.err.println("Error: My own address not found in sorted group members!");
-                            return; // Should not happen
+                            System.err.println("Erro: Meu próprio endereço não encontrado nos membros do grupo ordenados!");
+                            return;
                         }
 
-                        // Resize and initialize MC if necessary
                         synchronized (clockLock) {
                             if (mc.getMc().length != groupMembers.size()) {
-                                System.out.println("Resizing MulticastClock from " + mc.getMc().length + " to "
+                                System.out.println("Resizing MulticastClock de " + mc.getMc().length + " para "
                                         + groupMembers.size());
                                 MulticastClock newMc = new MulticastClock(groupMembers.size());
-                                // Copy existing clock values to new MC if possible
                                 for (int i = 0; i < Math.min(mc.getMc().length, newMc.getMc().length); i++) {
                                     for (int j = 0; j < Math.min(mc.getMc()[i].length, newMc.getMc()[i].length); j++) {
                                         newMc.getMc()[i][j] = mc.getMc()[i][j];
@@ -141,14 +163,15 @@ public class StableMulticast {
                                 mc = newMc;
                             }
                         }
-                        System.out.println("Group members updated. My ID: " + myId + ", Members: "
-                                + groupMembers.stream().map(Object::toString).collect(Collectors.joining(", ")));
-                        displayClockAndBuffer(); // Re-display on change
+                        // ESTE LOG É IMPORTANTE E FOI MANTIDO
+                        System.out.println("Membros do grupo atualizados. Meu ID: P" + myId + ", Membros: "
+                                + groupMembers.stream().map(m -> m.getAddress().getHostAddress() + ":" + m.getPort()).collect(Collectors.joining(", ")));
+                        displayClockAndBuffer();
                     }
                 }
 
             } catch (IOException e) {
-                System.err.println("Discovery service error: " + e.getMessage());
+                System.err.println("Erro no serviço de descoberta: " + e.getMessage());
             }
         }, 0, DISCOVERY_INTERVAL_MS, TimeUnit.MILLISECONDS);
     }
@@ -167,11 +190,11 @@ public class StableMulticast {
                     processReceivedMessage(receivedMsg);
 
                 } catch (SocketException se) {
-                    if (running) { // Only print if not intentionally closed
-                        System.err.println("Unicast socket closed unexpectedly: " + se.getMessage());
+                    if (running) {
+                        System.err.println("Socket unicast fechado inesperadamente: " + se.getMessage());
                     }
                 } catch (IOException | ClassNotFoundException e) {
-                    System.err.println("Error receiving unicast message: " + e.getMessage());
+                    System.err.println("Erro ao receber mensagem unicast: " + e.getMessage());
                 }
             }
         });
@@ -182,31 +205,26 @@ public class StableMulticast {
             messageBuffer.add(msg);
         }
 
-        System.out.println("Received: " + msg);
+        // System.out.println("Recebido: " + msg); // Mantido o log de "Recebido" para feedback imediato
 
         synchronized (clockLock) {
-            // Check if senderId is valid within current group size
             if (msg.getSenderId() >= 0 && msg.getSenderId() < mc.getMc().length) {
-                // MCi[j][*] <- msg.VC (update my view of sender's clock)
                 mc.updateVector(msg.getSenderId(), msg.getSenderVC());
 
-                // if i != j then MCi[i][j] <- MCi[i][j]+1
                 if (myId != -1 && myId != msg.getSenderId() && myId < mc.getMc().length) {
                     mc.increment(myId, msg.getSenderId());
                 }
             } else {
-                System.err.println("Warning: Received message from unknown sender ID (" + msg.getSenderId()
-                        + "). Discarding clock update.");
+                System.err.println("Aviso: Mensagem recebida de um ID de remetente desconhecido (" + msg.getSenderId()
+                        + "). Descartando atualização do clock.");
             }
         }
 
-        // Deliver message to the upper layer
         clientCallback.deliver(msg.getContent());
-        displayClockAndBuffer(); // Display after processing
+        displayClockAndBuffer();
     }
 
     private void startStabilizationChecker() {
-        // Check for stable messages more frequently than discovery
         scheduledThreadPool.scheduleAtFixedRate(this::checkAndDiscardStableMessages, 1, 1, TimeUnit.SECONDS);
     }
 
@@ -219,33 +237,29 @@ public class StableMulticast {
 
                     int sender = msg.getSenderId();
                     if (sender < 0 || sender >= mc.getMc().length) {
-                        System.err.println("Warning: Message in buffer has invalid sender ID (" + sender
-                                + "). Skipping stabilization check.");
+                        System.err.println("Aviso: Mensagem no buffer tem ID de remetente inválido (" + sender
+                                + "). Pulando verificação de estabilização.");
                         continue;
                     }
 
                     boolean isStable = true;
                     int minClockValueForSender = Integer.MAX_VALUE;
 
-                    // Calculate min1<=x<=n(MCi[x][msg.sender])
                     for (int x = 0; x < mc.getMc().length; x++) {
-                        if (x < mc.getMc().length && sender < mc.getMc()[x].length) { // Ensure indices are valid
+                        if (x < mc.getMc().length && sender < mc.getMc()[x].length) {
                             minClockValueForSender = Math.min(minClockValueForSender, mc.getMc()[x][sender]);
                         } else {
-                            // This can happen if group size changes dynamically while checking.
-                            // Consider messages from unknown or outdated sender IDs as unstable for now.
                             isStable = false;
                             break;
                         }
                     }
 
                     if (isStable) {
-                        // msg.VC[msg.sender] <= min1<=x<=n(MCi[x][msg.sender])
                         if (msg.getSenderVC()[sender] <= minClockValueForSender) {
-                            System.out.println("Discarding stable message: " + msg.getContent() + " from P" + sender +
+                            System.out.println("Descartando mensagem estável: " + msg.getContent() + " de P" + sender +
                                     " (VC[" + sender + "] = " + msg.getSenderVC()[sender] +
                                     " <= min(MC[x][" + sender + "]) = " + minClockValueForSender + ")");
-                            iterator.remove(); // Discard msg
+                            iterator.remove();
                             displayClockAndBuffer();
                         }
                     }
@@ -256,31 +270,28 @@ public class StableMulticast {
 
     public void msend(String msgContent, IStableMulticast client) {
         if (myId == -1) {
-            System.err.println("Cannot send message: My ID is not yet assigned. Waiting for discovery...");
+            System.err.println("Não é possível enviar mensagem: Meu ID ainda não foi atribuído. Aguardando descoberta...");
             return;
         }
         if (groupMembers.size() <= 1) {
-            System.err.println("Cannot send message: No other members in the group yet.");
+            System.err.println("Não é possível enviar mensagem: Nenhum outro membro no grupo ainda.");
             return;
         }
 
         synchronized (clockLock) {
-            // msg.VC <- MCi[i][*] (current sender's view of its own clock)
             int[] senderVC = mc.getVector(myId);
             StableMulticastMessage msg = new StableMulticastMessage(msgContent, senderVC, myId);
 
-            // MCi[i][i] <- MCi[i][i]+1
             mc.increment(myId, myId);
             displayClockAndBuffer();
 
-            // for all P do send(msg) to Pj enddo
-            System.out.println("\nPreparing to send message: \"" + msgContent + "\"");
-            System.out.print("Send to ALL members? (yes/no): ");
+            System.out.println("\nPreparando para enviar mensagem: \"" + msgContent + "\"");
+            System.out.print("Enviar para TODOS os membros? (sim/nao): ");
             String response = scanner.nextLine().trim().toLowerCase();
 
-            if ("yes".equals(response)) {
+            if ("sim".equals(response)) {
                 for (InetSocketAddress member : groupMembers) {
-                    if (!member.equals(new InetSocketAddress(myIp, myPort))) { // Don't send to self
+                    if (!member.equals(new InetSocketAddress(myIp, myPort))) {
                         sendUnicast(msg, member);
                     }
                 }
@@ -291,15 +302,15 @@ public class StableMulticast {
                         .collect(Collectors.toList());
 
                 System.out.println(
-                        "Choose recipients (enter numbers separated by space, or 'all' for all, 'none' to skip sending):");
+                        "Escolha os destinatários (digite números separados por espaço, ou 'todos' para todos, 'nenhum' para pular o envio):");
                 for (int i = 0; i < otherMembers.size(); i++) {
                     System.out.println((i + 1) + ". " + otherMembers.get(i));
                 }
                 String choices = scanner.nextLine().trim();
 
-                if ("all".equals(choices)) {
+                if ("todos".equals(choices)) {
                     recipients.addAll(otherMembers);
-                } else if (!"none".equals(choices) && !choices.isEmpty()) {
+                } else if (!"nenhum".equals(choices) && !choices.isEmpty()) {
                     try {
                         Arrays.stream(choices.split("\\s+"))
                                 .map(Integer::parseInt)
@@ -307,7 +318,7 @@ public class StableMulticast {
                                 .filter(i -> i >= 0 && i < otherMembers.size())
                                 .forEach(i -> recipients.add(otherMembers.get(i)));
                     } catch (NumberFormatException e) {
-                        System.err.println("Invalid input. Sending to no one.");
+                        System.err.println("Entrada inválida. Não enviando para ninguém.");
                     }
                 }
 
@@ -329,22 +340,22 @@ public class StableMulticast {
                 DatagramPacket packet = new DatagramPacket(data, data.length, destination.getAddress(),
                         destination.getPort());
                 unicastSocket.send(packet);
-                System.out.println("Sent unicast message to " + destination + ": " + msg.getContent());
+                System.out.println("Mensagem unicast enviada para " + destination + ": \"" + msg.getContent() + "\"");
             } catch (IOException e) {
-                System.err.println("Error sending unicast message to " + destination + ": " + e.getMessage());
+                System.err.println("Erro ao enviar mensagem unicast para " + destination + ": " + e.getMessage());
             }
         });
     }
 
     private void displayClockAndBuffer() {
-        System.out.println("\n--- Current State (P" + myId + ") ---");
+        System.out.println("\n--- Estado Atual (P" + myId + ") ---");
         synchronized (clockLock) {
             System.out.println(mc);
         }
         synchronized (bufferLock) {
-            System.out.println("Message Buffer (" + messageBuffer.size() + " messages):");
+            System.out.println("Buffer de Mensagens (" + messageBuffer.size() + " mensagens):");
             if (messageBuffer.isEmpty()) {
-                System.out.println("  [Empty]");
+                System.out.println("  [Vazio]");
             } else {
                 for (StableMulticastMessage m : messageBuffer) {
                     System.out.println("  - " + m);
@@ -370,12 +381,13 @@ public class StableMulticast {
         }
         if (multicastSocket != null) {
             try {
-                multicastSocket.leaveGroup(InetAddress.getByName(MULTICAST_ADDRESS));
+                // MULTICAST_ADDRESS já é um InetAddress, não precisa de getByName novamente
+                multicastSocket.leaveGroup(MULTICAST_ADDRESS);
             } catch (IOException e) {
-                System.err.println("Error leaving multicast group: " + e.getMessage());
+                System.err.println("Erro ao sair do grupo multicast: " + e.getMessage());
             }
             multicastSocket.close();
         }
-        System.out.println("StableMulticast shutdown complete.");
+        System.out.println("StableMulticast desligado completamente.");
     }
 }
