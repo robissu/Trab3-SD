@@ -211,6 +211,7 @@ public class StableMulticast {
         }
 
         clientCallback.deliver(msg.getContent());
+        //System.out.println("entreguei a msg:" + msg.getContent());
     }
 
     private void startStabilizationChecker() {
