@@ -29,6 +29,12 @@ public class MulticastClock implements Serializable {
         }
     }
 
+    // --- ADICIONE ESTE MÉTODO ---
+    public synchronized int getNumberOfProcesses() {
+        return numberOfProcesses;
+    }
+    // --------------------------
+
     public synchronized void increment(int processId, int vectorIndex) {
         if (processId >= 0 && processId < numberOfProcesses && vectorIndex >= 0 && vectorIndex < numberOfProcesses) {
             mc[processId][vectorIndex]++;
